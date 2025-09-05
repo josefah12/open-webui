@@ -215,6 +215,12 @@ class MilvusClient(VectorDBBase):
                 f"Querying collection {self.collection_prefix}_{collection_name} with filter: '{filter_string}', limit: {limit}"
             )
 
+            # Milvus QueryIterator does not accept `None` for limit (it expects an int).
+            # Use a large default limit when callers pass None so arithmetic in the
+            # iterator implementation doesn't hit a TypeError. If truly unbounded
+            # behavior is needed, implement paginated queries instead.
+            query_limit = limit if limit is not None else 16384
+
             iterator = collection.query_iterator(
                 filter=filter_string,
                 output_fields=[
@@ -222,7 +228,7 @@ class MilvusClient(VectorDBBase):
                     "data",
                     "metadata",
                 ],
-                limit=limit,  # Pass the limit directly; None means no limit.
+                limit=query_limit,
             )
 
             while True:
@@ -249,7 +255,9 @@ class MilvusClient(VectorDBBase):
         )
         # Using query with a trivial filter to get all items.
         # This will use the paginated query logic.
-        return self.query(collection_name=collection_name, filter={}, limit=None)
+        # Use a high default limit instead of None to avoid passing None into
+        # pymilvus' QueryIterator which performs numeric operations on the limit.
+        return self.query(collection_name=collection_name, filter={}, limit=16384)
 
     def insert(self, collection_name: str, items: list[VectorItem]):
         # Insert the items into the collection, if the collection does not exist, it will be created.
